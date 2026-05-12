@@ -1,0 +1,11 @@
+sensor_preprocessed.csv 
+sensor_merged.csv 
+2025airkorea/ 
+__pycache__/ 
+*.pyc 
+.env 
+nosmoking.csv 
+monthly_risk_clean.csv 
+air_data.csv 
+read_data.py 
+seoul_health_dong_final.csv 
