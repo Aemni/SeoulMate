@@ -9,3 +9,7 @@ monthly_risk_clean.csv
 air_data.csv 
 read_data.py 
 seoul_health_dong_final.csv 
+seoulmate_server/app/data/monthly_risk.csv
+seoulmate_server/app/models/hvac_model.pkl
+seoulmate_server/app/models/stress_model.pkl
+seoulmate_server/predictions/

@@ -1,0 +1,49 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = "seoulmate-api"
+        CONTAINER_NAME = "seoulmate-api"
+        PORT = "8000"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh "docker build -t ${IMAGE_NAME}:latest ."
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh """
+                    docker stop ${CONTAINER_NAME} || true
+                    docker rm   ${CONTAINER_NAME} || true
+                    docker run -d \\
+                        --name ${CONTAINER_NAME} \\
+                        --network host \\
+                        --env-file .env \\
+                        -p ${PORT}:${PORT} \\
+                        ${IMAGE_NAME}:latest
+                """
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                sh "sleep 3 && curl -f http://localhost:${PORT}/health || exit 1"
+            }
+        }
+    }
+
+    post {
+        success { echo "✅ 배포 성공!" }
+        failure { echo "❌ 배포 실패 — 로그 확인 필요" }
+    }
+}
