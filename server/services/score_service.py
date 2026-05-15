@@ -1,151 +1,268 @@
-from db.mongodb import get_db
-from fastapi import HTTPException
+# app/services/score_service.py
 
-# layer → 컬렉션명 매핑
+from db.mongodb import get_db
+
+# 조회 가능한 레이어 목록
+# 각 레이어는 MongoDB 컬렉션 이름과 매핑됨
 LAYER_COLLECTION = {
-    "overall":  None,           # 전체 컬렉션에서 종합
     "health":   "health_scores",
     "comfort":  "comfort_scores",
     "safety":   "safety_scores",
-    "stress":   "stress_scores",   # 서버팀 담당
-    "hvac":     "hvac_scores",     # 서버팀 담당
+    "stress":   "stress_scores",
+    "hvac":     "hvac_scores",
+    "expenses": "expenses_scores",
 }
 
-VALID_LAYERS = set(LAYER_COLLECTION.keys())
 
-
-# ── 히트맵 서비스 ─────────────────────────────────────────────
-async def get_heatmap(layer: str, year: int, month: int) -> list:
-    if layer not in VALID_LAYERS:
-        raise HTTPException(status_code=400, detail=f"잘못된 layer 값: {layer}")
-
+async def get_layer_scores(layer: str, year: int, month: int) -> list:
+    """
+    특정 레이어의 전체 동 점수 조회 (히트맵용)
+    
+    Args:
+        layer: 조회할 레이어명 (health, comfort, safety 등)
+        year:  조회 연도
+        month: 조회 월
+    
+    Returns:
+        [{"code": "1132069000", "dong": "청구동", "gu": "중구", "score": 73, "grade": 2}, ...]
+    """
     db = get_db()
+    collection = LAYER_COLLECTION.get(layer)
 
-    if layer == "overall":
-        return await get_heatmap_overall(db, year, month)
+    if collection is None:
+        return []
 
-    col_name = LAYER_COLLECTION[layer]
-    col = db[col_name]
-    cursor = col.find(
+    cursor = db[collection].find(
         {"year": year, "month": month},
         {"_id": 0, "dong_code": 1, "dong": 1, "gu": 1, "score": 1, "grade": 1}
     )
-    docs = await cursor.to_list(length=None)
-
-    if not docs:
-        raise HTTPException(status_code=400, detail="해당 연도/월 데이터가 없습니다")
-
-    return [{
-        "code":  d["dong_code"],
-        "dong":  d["dong"],
-        "gu":    d["gu"],
-        "grade": d["grade"],
-        "score": float(d["score"]),
-    } for d in docs]
-
-
-async def get_heatmap_overall(db, year: int, month: int) -> list:
-    """overall: 각 컬렉션 점수 평균으로 종합 점수 계산"""
-    layers = ["health", "comfort", "safety"]
-    data = {}
-
-    for layer in layers:
-        col = db[LAYER_COLLECTION[layer]]
-        cursor = col.find(
-            {"year": year, "month": month},
-            {"_id": 0, "dong_code": 1, "dong": 1, "gu": 1, "score": 1}
-        )
-        docs = await cursor.to_list(length=None)
-        for d in docs:
-            code = d["dong_code"]
-            if code not in data:
-                data[code] = {"dong": d["dong"], "gu": d["gu"], "scores": []}
-            data[code]["scores"].append(d["score"])
-
-    if not data:
-        raise HTTPException(status_code=400, detail="해당 연도/월 데이터가 없습니다")
 
     result = []
-    for code, info in data.items():
-        avg = sum(info["scores"]) / len(info["scores"])
-        # 점수 → 등급 (1=좋음, 5=나쁨 기준)
-        if avg >= 80:   grade = 1
-        elif avg >= 60: grade = 2
-        elif avg >= 40: grade = 3
-        elif avg >= 20: grade = 4
-        else:           grade = 5
+    async for doc in cursor:
         result.append({
-            "code":  code,
-            "dong":  info["dong"],
-            "gu":    info["gu"],
-            "grade": grade,
-            "score": round(avg, 2),
+            "code":  str(doc["dong_code"]),
+            "dong":  doc.get("dong", ""),
+            "gu":    doc.get("gu", ""),
+            "score": doc.get("score", 0),
+            "grade": doc.get("grade", 0),
         })
+
     return result
 
 
-# ── 상세보기 서비스 ───────────────────────────────────────────
-async def get_detail(dong_code: int, year: int) -> dict:
+async def get_dong_overall_trend(code: str, year: int, month: int) -> list:
+    """
+    특정 동의 전체 레이어 월별 평균 트렌드 조회 (score_last_year용)
+    조회 범위: 전년 1월 ~ 현재 월
+
+    Args:
+        code:  행정동 코드 (10자리 문자열)
+        year:  조회 연도
+        month: 조회 월
+
+    Returns:
+        [61, 63, 65, 68, 70, 72, 69, 67, 65, 63, 60, 58, 61, 64, 66, 68, 68]
+    """
+    db = get_db()
+    dong_code = int(code)
+
+    # 조회 범위 계산: 전년 1월 ~ 현재 월
+    date_range = []
+    for y in [year - 1, year]:
+        start_month = 1
+        end_month   = 12 if y == year - 1 else month
+        for m in range(start_month, end_month + 1):
+            date_range.append((y, m))
+
+    scores = []
+    for y, m in date_range:
+        month_scores = []
+
+        # 해당 월의 6개 레이어 점수 조회
+        for layer, collection in LAYER_COLLECTION.items():
+            doc = await db[collection].find_one(
+                {"dong_code": dong_code, "year": y, "month": m},
+                {"_id": 0, "score": 1}
+            )
+            if doc and doc.get("score", 0) != 0:
+                month_scores.append(doc["score"])
+
+        # 해당 월 평균
+        avg = round(sum(month_scores) / len(month_scores)) if month_scores else 0
+        scores.append(avg)
+
+    return scores
+
+async def get_overall_scores(year: int, month: int) -> list:
+    """
+    overall 레이어 조회 - 6개 레이어 점수 평균을 종합 점수로 반환 (히트맵용)
+
+    Args:
+        year:  조회 연도
+        month: 조회 월
+
+    Returns:
+        [{"code": "1132069000", "dong": "청구동", "gu": "중구", "score": 68, "grade": 2}, ...]
+    """
     db = get_db()
 
-    # health 기준으로 기본 정보 + 월별 점수 가져오기
-    health_col = db["health_scores"]
-    cursor = health_col.find(
-        {"dong_code": dong_code, "year": year},
-        {"_id": 0}
-    ).sort("month", 1)
-    health_docs = await cursor.to_list(length=None)
+    # 전체 동 목록 health 기준으로 가져오기
+    cursor = db["health_scores"].find(
+        {"year": year, "month": month},
+        {"_id": 0, "dong_code": 1, "dong": 1, "gu": 1}
+    )
 
-    if not health_docs:
-        raise HTTPException(status_code=400, detail="해당 동/연도 데이터가 없습니다")
+    dong_list = []
+    async for doc in cursor:
+        dong_list.append(doc)
 
-    latest     = health_docs[-1]
-    dong_name  = latest.get("dong", "")
-    gu_name    = latest.get("gu", "")
+    result = []
+    for dong in dong_list:
+        code = dong["dong_code"]
+        scores = []
 
-    # 각 모델 최신 월 점수 조회
-    async def get_latest_score(col_name: str) -> tuple:
-        col    = db[col_name]
-        cursor = col.find(
-            {"dong_code": dong_code, "year": year},
-            {"_id": 0, "score": 1, "grade": 1}
-        ).sort("month", -1).limit(1)
-        docs = await cursor.to_list(length=1)
-        if docs:
-            return docs[0].get("score", 0), docs[0].get("grade", 3)
-        return 0, 3
+        # 6개 레이어에서 해당 동의 점수 조회
+        for layer, collection in LAYER_COLLECTION.items():
+            doc = await db[collection].find_one(
+                {"dong_code": code, "year": year, "month": month},
+                {"_id": 0, "score": 1}
+            )
+            if doc and doc.get("score", 0) != 0:
+                scores.append(doc["score"])
 
-    health_score,  health_grade  = latest.get("score", 0), latest.get("grade", 3)
-    comfort_score, comfort_grade = await get_latest_score("comfort_scores")
-    safety_score,  safety_grade  = await get_latest_score("safety_scores")
+        avg = round(sum(scores) / len(scores)) if scores else 0
 
-    # 종합 점수 (3개 모델 평균)
-    overall = int(round((health_score + comfort_score + safety_score) / 3))
+        result.append({
+            "code":  str(code),
+            "dong":  dong.get("dong", ""),
+            "gu":    dong.get("gu", ""),
+            "score": avg,
+            "grade": 0,  # overall은 등급 없음
+        })
 
-    # 월별 health 점수 (최근 12개월)
-    score_last_year = [int(d.get("score", 0)) for d in health_docs]
-    average_score   = int(round(sum(score_last_year) / len(score_last_year)))
+    return result
 
-    # 최근 추세
-    recent_trend = 0
-    if len(score_last_year) >= 2:
-        diff = score_last_year[-1] - score_last_year[-2]
-        if diff > 1:   recent_trend = 1
-        elif diff < -1: recent_trend = 2
+async def get_safety_scores(year: int) -> list:
+    """
+    치안 레이어 연간 평균 점수 조회 (heatmap/safety용)
+    
+    치안은 UI에서 월별 없이 연간으로만 보여주므로
+    해당 연도 전체 월 평균을 내서 반환
 
-    return {
-        "status":          200,
-        "code":            dong_code,
-        "dong":            dong_name,
-        "gu":              gu_name,
-        "score":           overall,
-        "health":          health_score,
-        "comfort":         comfort_score,
-        "safety":          safety_score,
-        "hvac":            0,      # 서버팀 담당
-        "stress":          0,      # 서버팀 담당
-        "expenses":        0,      # 서버팀 담당
-        "average_score":   average_score,
-        "score_last_year": score_last_year,
-        "recent_trend":    recent_trend,
-    }
+    Args:
+        year: 조회 연도
+
+    Returns:
+        [{"code": "1132069000", "dong": "청구동", "gu": "중구", "score": 73, "grade": 2}, ...]
+    """
+    db = get_db()
+
+    # 해당 연도 전체 월 데이터 조회
+    cursor = db["safety_scores"].find(
+        {"year": year},
+        {"_id": 0, "dong_code": 1, "dong": 1, "gu": 1, "score": 1, "grade": 1}
+    )
+
+    # 동별로 점수 모으기
+    dong_scores: dict = {}
+    async for doc in cursor:
+        code = str(doc["dong_code"])
+        if code not in dong_scores:
+            dong_scores[code] = {
+                "dong":   doc.get("dong", ""),
+                "gu":     doc.get("gu", ""),
+                "scores": [],
+                "grade":  doc.get("grade", 0),
+            }
+        dong_scores[code]["scores"].append(doc.get("score", 0))
+
+    # 동별 평균 계산
+    result = []
+    for code, data in dong_scores.items():
+        scores = [s for s in data["scores"] if s != 0]
+        avg = round(sum(scores) / len(scores)) if scores else 0
+        result.append({
+            "code":  code,
+            "dong":  data["dong"],
+            "gu":    data["gu"],
+            "score": avg,
+            "grade": data["grade"],
+        })
+
+    return result
+
+async def get_dong_detail(code: str, year: int, month: int) -> dict:
+    """
+    특정 동의 전체 레이어 점수 조회 (overview 종합용)
+
+    Args:
+        code:  행정동 코드 (10자리 문자열)
+        year:  조회 연도
+        month: 조회 월
+
+    Returns:
+        {"dong": "청구동", "gu": "중구", "health": 72, "comfort": 65, ...}
+    """
+    db = get_db()
+    dong_code = int(code)
+
+    result = {"dong": "", "gu": ""}
+
+    for layer, collection in LAYER_COLLECTION.items():
+        doc = await db[collection].find_one(
+            {"dong_code": dong_code, "year": year, "month": month},
+            {"_id": 0, "dong": 1, "gu": 1, "score": 1}
+        )
+        if doc:
+            result[layer] = doc.get("score", 0)
+            if not result["dong"]:
+                result["dong"] = doc.get("dong", "")
+                result["gu"]   = doc.get("gu", "")
+        else:
+            result[layer] = 0
+
+    return result
+
+
+async def get_dong_trend(code: str, layer: str, year: int, month: int) -> list:
+    """
+    특정 동의 특정 레이어 월별 트렌드 조회
+    조회 범위: 전년 1월 ~ 현재 월
+    
+    예: year=2026, month=5 → 2025년 1월 ~ 2026년 5월 (총 17개월)
+
+    Args:
+        code:  행정동 코드 (10자리 문자열)
+        layer: 조회할 레이어명
+        year:  조회 연도
+        month: 조회 월
+
+    Returns:
+        [61, 63, 65, 68, 70, 72, 69, 67, 65, 63, 60, 58, 61, 64, 66, 68, 68]
+    """
+    db = get_db()
+    collection = LAYER_COLLECTION.get(layer)
+
+    if collection is None:
+        return []
+
+    dong_code = int(code)
+
+    # 조회 범위 계산: 전년 1월 ~ 현재 월
+    # 예: 2026년 5월 → (2025, 1) ~ (2026, 5)
+    date_range = []
+    for y in [year - 1, year]:
+        start_month = 1
+        end_month   = 12 if y == year - 1 else month
+        for m in range(start_month, end_month + 1):
+            date_range.append((y, m))
+
+    scores = []
+    for y, m in date_range:
+        doc = await db[collection].find_one(
+            {"dong_code": dong_code, "year": y, "month": m},
+            {"_id": 0, "score": 1}
+        )
+        scores.append(doc["score"] if doc else 0)
+
+    return scores
