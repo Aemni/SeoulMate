@@ -9,7 +9,6 @@ CSV 데이터 → MongoDB 적재 스크립트
 - expenses_scores ← expenses_model.csv        (행정동별 월별, 생활비용)
 
 추후 추가:
-- stress_scores  ← pkl 모델 결과 CSV
 - hvac_scores    ← pkl 모델 결과 CSV
 """
 
