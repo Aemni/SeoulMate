@@ -1,8 +1,5 @@
 pipeline {
     agent any
-    environment {
-        COMPOSE_FILE = "server/docker-compose.yml"
-    }
     stages {
         stage('Checkout') {
             steps {
@@ -11,16 +8,22 @@ pipeline {
         }
         stage('Build & Deploy') {
             steps {
-                sh """
-                    cd server
-                    docker compose down
-                    docker compose up -d --build
-                """
+                sshagent(['seoulmate-ssh']) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no overlord@seoulmate.cloud '
+                            cd ~/SeoulMate &&
+                            git pull origin main &&
+                            cd server &&
+                            docker compose down &&
+                            docker compose up -d --build
+                        '
+                    """
+                }
             }
         }
         stage('Health Check') {
             steps {
-                sh "sleep 5 && curl -f http://localhost:8000/health || exit 1"
+                sh "sleep 5 && curl -f http://seoulmate.cloud:8000/health || exit 1"
             }
         }
     }
