@@ -11,7 +11,7 @@ VALID_LAYERS = {"overall", "safety", "health", "hvac", "comfort", "expenses"}
 
 @router.get("/v1/heatmap")
 async def get_heatmap(
-    layer: str = Query(..., description="조회 layer (overall, safety, health, stress, hvac, comfort, expenses)"),
+    layer: str = Query(..., description="조회 layer (overall, safety, health, hvac, comfort, expenses)"),
     year:  int = Query(..., description="조회 연도"),
     month: int = Query(..., ge=1, le=12, description="조회 월 (1~12)"),
     auth=Depends(verify_api_key),

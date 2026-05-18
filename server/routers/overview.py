@@ -76,7 +76,6 @@ async def get_overview(
         detail.get("health",   0),
         detail.get("comfort",  0),
         detail.get("safety",   0),
-        detail.get("stress",   0),
         detail.get("hvac",     0),
         detail.get("expenses", 0),
     ]
@@ -95,7 +94,6 @@ async def get_overview(
         "health":          detail.get("health",   0),
         "comfort":         detail.get("comfort",  0),
         "safety":          detail.get("safety",   0),
-        "stress":          detail.get("stress",   0),
         "hvac":            detail.get("hvac",     0),
         "expenses":        detail.get("expenses", 0),
         "average_score":   average_score,
