@@ -6,7 +6,7 @@ from services.score_service import get_layer_scores, get_overall_scores, get_saf
 
 router = APIRouter()
 
-VALID_LAYERS = {"overall", "safety", "health", "stress", "hvac", "comfort", "expenses"}
+VALID_LAYERS = {"overall", "safety", "health", "hvac", "comfort", "expenses"}
 
 
 @router.get("/v1/heatmap")

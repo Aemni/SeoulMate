@@ -8,7 +8,6 @@ LAYER_COLLECTION = {
     "health":   "health_scores",
     "comfort":  "comfort_scores",
     "safety":   "safety_scores",
-    "stress":   "stress_scores",
     "hvac":     "hvac_scores",
     "expenses": "expenses_scores",
 }
