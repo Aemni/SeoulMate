@@ -21,6 +21,19 @@ pipeline {
                 }
             }
         }
+        stage('Load Data') {
+            steps {
+                sshagent(['seoulmate-ssh']) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no overlord@seoulmate.cloud '
+                            cd ~/SeoulMate/server &&
+                            source /home/overlord/venv/bin/activate &&
+                            MONGO_URI=mongodb://localhost:27017 python load_data.py
+                        '
+                    """
+                }
+            }
+        }
         stage('Health Check') {
             steps {
                 sh "sleep 5 && curl -f http://seoulmate.cloud:8000/health || exit 1"
