@@ -56,8 +56,17 @@ async def get_overview(
         if layer not in LAYER_COLLECTION:
             raise HTTPException(status_code=400, detail="잘못된 layer입니다.")
 
+        if layer == "safety":
+            scores = await get_safety_trend(code)
+            return {
+                "status":       200,
+                "code":         code,
+                "layer":        layer,
+                "score_trend":  scores,  # [{"year": 2017, "score": 49}, ...]
+                "recent_trend": 1 if scores[-1]["score"] > scores[-2]["score"] else 2 if scores[-1]["score"] < scores[-2]["score"] else 0
+            }
+        
         scores = await get_dong_trend(code, layer, year, month)
-
         return {
             "status":       200,
             "code":         code,
@@ -66,15 +75,6 @@ async def get_overview(
             "recent_trend": calculate_trend(scores),
         }
     
-    if layer == "safety":
-        scores = await get_safety_trend(code)
-    return {
-        "status":       200,
-        "code":         code,
-        "layer":        layer,
-        "score_trend":  scores,  # [{"year": 2017, "score": 49}, ...]
-        "recent_trend": 1 if scores[-1]["score"] > scores[-2]["score"] else 2 if scores[-1]["score"] < scores[-2]["score"] else 0
-    }
 
     # layer 없으면 종합 요약 (3번 엔드포인트)
     detail = await get_dong_detail(code, year, month)
