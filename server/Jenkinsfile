@@ -14,8 +14,8 @@ pipeline {
                             cd ~/SeoulMate &&
                             git pull origin main &&
                             cd server &&
-                            docker compose down &&
-                            docker compose up -d --build
+                            docker-compose down &&
+                            docker-compose up -d --build
                         '
                     """
                 }
