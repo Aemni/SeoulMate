@@ -5,7 +5,8 @@ from core.auth import verify_api_key
 from services.score_service import (
     get_dong_detail,
     get_dong_trend,
-    get_dong_overall_trend,  # 추가
+    get_dong_overall_trend,
+    get_safety_trend,
     LAYER_COLLECTION,
 )
 
@@ -64,6 +65,16 @@ async def get_overview(
             "score_trend":  scores,
             "recent_trend": calculate_trend(scores),
         }
+    
+    if layer == "safety":
+        scores = await get_safety_trend(code)
+    return {
+        "status":       200,
+        "code":         code,
+        "layer":        layer,
+        "score_trend":  scores,  # [{"year": 2017, "score": 49}, ...]
+        "recent_trend": 1 if scores[-1]["score"] > scores[-2]["score"] else 2 if scores[-1]["score"] < scores[-2]["score"] else 0
+    }
 
     # layer 없으면 종합 요약 (3번 엔드포인트)
     detail = await get_dong_detail(code, year, month)

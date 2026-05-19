@@ -115,42 +115,51 @@ async def load_safety(db):
     print("\n[safety] safety_model.csv 로드 중...")
     safety = pd.read_csv(os.path.join(BASE_PATH, "safety_model.csv"), encoding="utf-8-sig")
 
-    # 2024년 점수/등급만 사용
-    safety = safety[["자치구", "2024_점수", "2024_등급"]].copy()
-    safety.columns = ["gu", "score", "grade"]
-    safety["score"] = safety["score"].round().astype(int)
-    safety["grade"] = safety["grade"].astype(int)
-
     # 행정동 목록 health에서 가져오기
     health_ref = pd.read_csv(os.path.join(BASE_PATH, "health_safety_model.csv"), encoding="utf-8-sig")
-    dong_info  = health_ref[["행정동_코드", "행정동_한글", "자치구명", "year", "month"]]\
+    dong_info  = health_ref[["행정동_코드", "행정동_한글", "자치구명"]]\
+        .drop_duplicates(subset=["행정동_코드"])\
         .rename(columns={"행정동_코드": "dong_code", "행정동_한글": "dong", "자치구명": "gu"})
     dong_info["dong_code"] = dong_info["dong_code"].astype(int)
 
-    # 구별 점수를 모든 동에 적용
-    df = dong_info.merge(safety, on="gu", how="left")
-
     col = db["safety_scores"]
     ops = []
-    for _, row in df.iterrows():
-        doc = {
-            "dong_code": int(row["dong_code"]),
-            "dong":      row["dong"],
-            "gu":        row["gu"],
-            "year":      int(row["year"]),
-            "month":     int(row["month"]),
-            "score":     int(row["score"]) if pd.notna(row["score"]) else 0,
-            "grade":     int(row["grade"]) if pd.notna(row["grade"]) else 3,
-        }
-        ops.append(UpdateOne(
-            {"dong_code": doc["dong_code"], "year": doc["year"], "month": doc["month"]},
-            {"$set": doc},
-            upsert=True,
-        ))
+
+    # 2017~2024년 각 연도별로 적재
+    for year in range(2017, 2025):
+        score_col = f"{year}_점수"
+        grade_col = f"{year}_등급"
+
+        if score_col not in safety.columns:
+            continue
+
+        # 구별 점수를 모든 동에 적용
+        safety_year = safety[["자치구", score_col, grade_col]].copy()
+        safety_year.columns = ["gu", "score", "grade"]
+        safety_year["score"] = safety_year["score"].round().astype(int)
+        safety_year["grade"] = safety_year["grade"].astype(int)
+
+        df = dong_info.merge(safety_year, on="gu", how="left")
+
+        for _, row in df.iterrows():
+            doc = {
+                "dong_code": int(row["dong_code"]),
+                "dong":      row["dong"],
+                "gu":        row["gu"],
+                "year":      year,
+                "month":     1,  # 치안은 연간 데이터라 month=1 고정
+                "score":     int(row["score"]) if pd.notna(row["score"]) else 0,
+                "grade":     int(row["grade"]) if pd.notna(row["grade"]) else 3,
+            }
+            ops.append(UpdateOne(
+                {"dong_code": doc["dong_code"], "year": doc["year"], "month": doc["month"]},
+                {"$set": doc},
+                upsert=True,
+            ))
 
     result = await col.bulk_write(ops)
     await col.create_index([("dong_code", 1), ("year", 1), ("month", 1)])
-    print(f"safety_scores 완료 — {len(df):,}건 (upserted: {result.upserted_count})")
+    print(f"safety_scores 완료 — {len(ops):,}건 (upserted: {result.upserted_count})")
 
 
 # ── 4. expenses_scores 적재 ─────────────────────────────────────

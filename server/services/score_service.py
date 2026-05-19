@@ -222,6 +222,29 @@ async def get_dong_detail(code: str, year: int, month: int) -> dict:
 
     return result
 
+async def get_safety_trend(code: str) -> list:
+    """
+    치안 연도별 트렌드 조회 (2017~2024)
+    월별이 아닌 연도별로 반환
+    
+    Returns:
+        [{"year": 2017, "score": 49}, {"year": 2018, "score": 52}, ...]
+    """
+    db = get_db()
+    dong_code = int(code)
+
+    result = []
+    for year in range(2017, 2025):
+        doc = await db["safety_scores"].find_one(
+            {"dong_code": dong_code, "year": year, "month": 1},
+            {"_id": 0, "score": 1}
+        )
+        result.append({
+            "year":  year,
+            "score": doc["score"] if doc else 0
+        })
+
+    return result
 
 async def get_dong_trend(code: str, layer: str, year: int, month: int) -> list:
     """
